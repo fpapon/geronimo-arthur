@@ -16,14 +16,17 @@
  */
 package org.apache.geronimo.arthur.integrationtests.container;
 
+import java.util.List;
+import java.util.Optional;
+import java.util.concurrent.ExecutionException;
+
 import com.github.dockerjava.api.DockerClient;
-import com.github.dockerjava.api.exception.NotFoundException;
-import lombok.extern.slf4j.Slf4j;
+import com.github.dockerjava.api.model.Image;
 import org.testcontainers.DockerClientFactory;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.images.builder.ImageFromDockerfile;
 
-import java.util.Optional;
+import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
 public class MavenContainer extends GenericContainer<MavenContainer> {
@@ -52,9 +55,16 @@ public class MavenContainer extends GenericContainer<MavenContainer> {
 
         final DockerClient client = DockerClientFactory.instance().client();
         try {
-            client.inspectImageCmd(targetImage).exec();
-            return targetImage;
-        } catch (final NotFoundException e) {
+            // note that docker daemon can ignore filter parameter so let's check it exactly
+            final List<Image> images = client.listImagesCmd()
+                    .withLabelFilter("org.apache.geronimo.arthur.tag=" + tag)
+                    .withDanglingFilter(false)
+                    .exec();
+            if (images.size() == 1) {
+                log.info("Found '{}' image, reusing it", targetImage);
+                return targetImage;
+            }
+
             log.info("Didn't find '{}', creating it from '{}'", targetImage, fromImage);
             return new ImageFromDockerfile(
                     targetImage, Boolean.getBoolean("arthur.container.maven.deleteOnExit"))
@@ -64,6 +74,11 @@ public class MavenContainer extends GenericContainer<MavenContainer> {
                             .label("org.apache.geronimo.arthur.baseImage", fromImage)
                             .label("org.apache.geronimo.arthur.tag", tag))
                     .get();
+        } catch (final InterruptedException ie) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException(ie);
+        } catch (final ExecutionException e) {
+            throw new IllegalStateException(e);
         }
     }
 }

@@ -26,9 +26,7 @@ import org.apache.geronimo.arthur.spi.model.ResourceModel;
 
 import java.lang.annotation.Annotation;
 import java.lang.reflect.Field;
-import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
-import java.lang.reflect.Proxy;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
@@ -61,24 +59,6 @@ public class DefautContext implements ArthurExtension.Context {
     private boolean modified;
 
     @Override
-    public ArthurExtension.Context wrap(final ArthurExtension.Context context, final InvocationHandler handler) {
-        return ArthurExtension.Context.class.cast(Proxy.newProxyInstance(Thread.currentThread().getContextClassLoader(),
-                new Class<?>[]{ArthurExtension.Context.class},
-                (proxy, method, args) -> {
-                    if ("equals".equals(method.getName())) {
-                        if (args[0] != null && (this == args[0] || context == args[0] ||
-                                (Proxy.isProxyClass(args[0].getClass()) && Proxy.getInvocationHandler(args[0]) == this))) {
-                            return true;
-                        }
-                    }
-                    if ("hashCode".equals(method.getName())) {
-                        return context.hashCode();
-                    }
-                    return handler.invoke(proxy, method, args);
-                }));
-    }
-
-    @Override
     public <T extends Annotation> Collection<Class<?>> findAnnotatedClasses(final Class<T> annotation) {
         return annotatedClassesFinder.apply(annotation);
     }
@@ -105,17 +85,8 @@ public class DefautContext implements ArthurExtension.Context {
 
     @Override
     public void register(final ClassReflectionModel classReflectionModel) {
-        reflections.stream()
-                .filter(it -> Objects.equals(classReflectionModel.getName(), it.getName()))
-                .findFirst()
-                .map(it -> {
-                    it.merge(classReflectionModel);
-                    return it;
-                })
-                .orElseGet(() -> {
-                    reflections.add(classReflectionModel);
-                    return classReflectionModel;
-                });
+        reflections.removeIf(it -> Objects.equals(classReflectionModel.getName(), it.getName()));
+        reflections.add(classReflectionModel);
         modified = true;
     }
 
@@ -127,14 +98,9 @@ public class DefautContext implements ArthurExtension.Context {
 
     @Override
     public void register(final ResourceBundleModel resourceBundleModel) {
-        bundles.stream()
-                .filter(it -> Objects.equals(resourceBundleModel.getName(), it.getName()))
-                .findFirst()
-                .orElseGet(() -> {
-                    modified = true;
-                    bundles.add(resourceBundleModel);
-                    return resourceBundleModel;
-                });
+        bundles.removeIf(it -> Objects.equals(it.getName(), resourceBundleModel.getName()));
+        bundles.add(resourceBundleModel);
+        modified = true;
     }
 
     @Override
